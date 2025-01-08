@@ -13,7 +13,7 @@ on:
         type: string
       raiseVersion:
         description: "Raise POM version to next release version? (true/false)"
-        default: "false"
+        default: false
         type: boolean
       javaVersion:
         type: number
