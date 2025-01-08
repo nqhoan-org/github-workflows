@@ -95,11 +95,11 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         if [ -z "${{ env.MODULES }}" ]; then
-          echo "Running release for ${{ github.event.repository.name }}"
+          echo "Running release for ${{ github.event.repository.name }} modules"
           mvn --batch-mode -Darguments="-Dmaven.test.skip=true -DaltDeploymentRepository=github::https://maven.pkg.github.com/axonivy-market/${{ github.event.repository.name }}" release:prepare release:perform
         else
           for module in ${{ env.MODULES }}; do
-            echo "Running releas for module $module"
+            echo "Running release for $module"
             mvn --batch-mode -f "$module/pom.xml" -Darguments="-Dmaven.test.skip=true -DaltDeploymentRepository=github::https://maven.pkg.github.com/axonivy-market/${{ github.event.repository.name }}" release:prepare release:perform
           done
         fi
