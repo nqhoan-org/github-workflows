@@ -56,50 +56,49 @@ jobs:
       run: |
         if [ "${{ inputs.modules }}" == "" ]; then
           echo "No modules input provided."
-          MODULES=""
+          echo "MODULES=" >> $GITHUB_ENV
         else
           echo "Using provided modules: ${{ inputs.modules }}"
           MODULES=$(echo '${{ inputs.modules }}' | tr ',' ' ')
+          echo "MODULES=$MODULES" >> $GITHUB_ENV
         fi
-        echo "::set-output name=modules_list::$MODULES"
 
     - name: Determine version
       id: determine-version
       run: |
         if [ "${{ inputs.version }}" == "" ]; then
           echo "No version input provided. Skipping version modification."
-          SKIP_VERSION_MODIFICATION=true
+          echo "SKIP_VERSION_MODIFICATION=true" >> $GITHUB_ENV
         else
           echo "Using provided version: ${{ inputs.version }}"
-          SKIP_VERSION_MODIFICATION=false
+          echo "SKIP_VERSION_MODIFICATION=false" >> $GITHUB_ENV
+          echo "VERSION=${{ inputs.version }}" >> $GITHUB_ENV
         fi
-        echo "::set-output name=skip_version_modification::$SKIP_VERSION_MODIFICATION"
-        echo "::set-output name=version::${{ inputs.version }}"
 
     - name: Find all POM files
       id: find-poms
       run: |
         POM_FILES=$(find . -name "pom.xml")
-        echo "::set-output name=pom_files::$POM_FILES"
+        echo "POM_FILES=$POM_FILES" >> $GITHUB_ENV
 
     - name: Update POM versions
-      if: ${{ steps.determine-version.outputs.skip_version_modification == 'false' }}
+      if: ${{ env.SKIP_VERSION_MODIFICATION == 'false' }}
       run: |
         echo "Updating version for all POM files in the repository"
-        for pom in ${{ steps.find-poms.outputs.pom_files }}; do
+        for pom in ${{ env.POM_FILES }}; do
           echo "Updating version in $pom"
-          mvn -f "$pom" versions:set -DnewVersion=${{ steps.determine-version.outputs.version }} -DgenerateBackupPoms=false
+          mvn -f "$pom" versions:set -DnewVersion=${{ env.VERSION }} -DgenerateBackupPoms=false
         done
 
     - name: Build with Maven
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        if [ "${{ steps.determine-modules.outputs.modules_list }}" == "" ]; then
+        if [ -z "${{ env.MODULES }}" ]; then
           echo "Running release for ${{ github.event.repository.name }}"
           mvn --batch-mode -Darguments="-Dmaven.test.skip=true -DaltDeploymentRepository=github::https://maven.pkg.github.com/axonivy-market/${{ github.event.repository.name }}" release:prepare release:perform
         else
-          for module in ${{ steps.determine-modules.outputs.modules_list }}; do
+          for module in ${{ env.MODULES }}; do
             echo "Running releas for module $module"
             mvn --batch-mode -f "$module/pom.xml" -Darguments="-Dmaven.test.skip=true -DaltDeploymentRepository=github::https://maven.pkg.github.com/axonivy-market/${{ github.event.repository.name }}" release:prepare release:perform
           done
