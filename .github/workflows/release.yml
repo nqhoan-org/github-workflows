@@ -3,6 +3,18 @@ name: Reusable Release-Build
 on: 
   workflow_call:
     inputs:
+      version:
+        description: "Release version"
+        default: ""
+        type: string
+      modules:
+        description: "Comma-separated list of projects will be released"
+        default: ""
+        type: string
+      raiseVersion:
+        description: "Raise POM version to next release version? (true/false)"
+        default: "false"
+        type: boolean
       javaVersion:
         type: number
         default: 21
@@ -39,12 +51,61 @@ jobs:
         git config user.name "${{ github.actor }}"
         git checkout -b new-release
 
+    - name: Determine project modules
+      id: determine-modules
+      run: |
+        if [ "${{ inputs.modules }}" == "" ]; then
+          echo "No modules input provided."
+          MODULES=""
+        else
+          echo "Using provided modules: ${{ inputs.modules }}"
+          MODULES=$(echo '${{ inputs.modules }}' | tr ',' ' ')
+        fi
+        echo "::set-output name=modules_list::$MODULES"
+
+    - name: Determine version
+      id: determine-version
+      run: |
+        if [ "${{ inputs.version }}" == "" ]; then
+          echo "No version input provided. Skipping version modification."
+          SKIP_VERSION_MODIFICATION=true
+        else
+          echo "Using provided version: ${{ inputs.version }}"
+          SKIP_VERSION_MODIFICATION=false
+        fi
+        echo "::set-output name=skip_version_modification::$SKIP_VERSION_MODIFICATION"
+        echo "::set-output name=version::${{ inputs.version }}"
+
+    - name: Find all POM files
+      id: find-poms
+      run: |
+        POM_FILES=$(find . -name "pom.xml")
+        echo "::set-output name=pom_files::$POM_FILES"
+
+    - name: Update POM versions
+      if: ${{ steps.determine-version.outputs.skip_version_modification == 'false' }}
+      run: |
+        echo "Updating version for all POM files in the repository"
+        for pom in ${{ steps.find-poms.outputs.pom_files }}; do
+          echo "Updating version in $pom"
+          mvn -f "$pom" versions:set -DnewVersion=${{ steps.determine-version.outputs.version }} -DgenerateBackupPoms=false
+        done
+
     - name: Build with Maven
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: mvn --batch-mode -Darguments="-Dmaven.test.skip=true -DaltDeploymentRepository=github::https://maven.pkg.github.com/axonivy-market/${{ github.event.repository.name }}" release:prepare release:perform
-
+      run: |
+        if [ "${{ steps.determine-modules.outputs.modules_list }}" == "" ]; then
+          echo "Running release for ${{ github.event.repository.name }}"
+          mvn --batch-mode -Darguments="-Dmaven.test.skip=true -DaltDeploymentRepository=github::https://maven.pkg.github.com/axonivy-market/${{ github.event.repository.name }}" release:prepare release:perform
+        else
+          for module in ${{ steps.determine-modules.outputs.modules_list }}; do
+            echo "Running releas for module $module"
+            mvn --batch-mode -f "$module/pom.xml" -Darguments="-Dmaven.test.skip=true -DaltDeploymentRepository=github::https://maven.pkg.github.com/axonivy-market/${{ github.event.repository.name }}" release:prepare release:perform
+          done
+        fi
     - name: Create pull request
+      if: ${{ inputs.raiseVersion }}
       uses: repo-sync/pull-request@v2
       with:
         destination_branch: ${{ steps.branch-name.outputs.current_branch }}
