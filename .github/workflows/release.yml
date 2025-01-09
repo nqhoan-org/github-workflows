@@ -3,7 +3,7 @@ name: Reusable Release-Build
 on: 
   workflow_call:
     inputs:
-      version:
+      releaseVersion:
         description: "Release version"
         default: ""
         type: string
@@ -11,8 +11,8 @@ on:
         description: "Comma-separated list of projects will be released"
         default: ""
         type: string
-      raiseVersion:
-        description: "Raise POM version to next release version? (true/false)"
+      raisePullRequest:
+        description: "Raise a pull request to update POM version to next release version? (true/false)"
         default: false
         type: boolean
       javaVersion:
@@ -54,7 +54,7 @@ jobs:
     - name: Determine project modules
       id: determine-modules
       run: |
-        if [ "${{ inputs.modules }}" == "" ]; then
+        if [ -z "${{ inputs.modules }}" ]; then
           echo "No modules input provided."
           echo "MODULES=" >> $GITHUB_ENV
         else
@@ -63,17 +63,19 @@ jobs:
           echo "MODULES=$MODULES" >> $GITHUB_ENV
         fi
 
-    - name: Determine version
+    - name: Determine Release Version
       id: determine-version
       run: |
-        if [ "${{ inputs.version }}" == "" ]; then
-          echo "No version input provided. Skipping version modification."
-          echo "SKIP_VERSION_MODIFICATION=true" >> $GITHUB_ENV
+        if [ -z "${{ inputs.releaseVersion }}" ]; then
+          # Extract the current version from pom.xml
+          CURRENT_VERSION=$(xmllint --xpath "//*[local-name()='project']/*[local-name()='version']/text()" pom.xml)
+          RELEASE_VERSION="${CURRENT_VERSION%-SNAPSHOT}"
         else
-          echo "Using provided version: ${{ inputs.version }}"
-          echo "SKIP_VERSION_MODIFICATION=false" >> $GITHUB_ENV
-          echo "VERSION=${{ inputs.version }}" >> $GITHUB_ENV
+          RELEASE_VERSION="${{ inputs.releaseVersion }}"
         fi
+
+        echo "releaseVersion=${RELEASE_VERSION}" >> $GITHUB_ENV
+        echo "Determined release version: $RELEASE_VERSION"
 
     - name: Find all POM files
       id: find-poms
@@ -96,13 +98,22 @@ jobs:
       run: |
         if [ -z "${{ env.MODULES }}" ]; then
           echo "Running release for ${{ github.event.repository.name }} modules"
-          mvn --batch-mode -Darguments="-Dmaven.test.skip=true -DaltDeploymentRepository=github::https://maven.pkg.github.com/axonivy-market/${{ github.event.repository.name }}" release:prepare release:perform
+          mvn -f "$module/pom.xml" release:prepare release:perform \
+            -Darguments="-Dmaven.test.skip=true \
+            -DaltDeploymentRepository=github::https://maven.pkg.github.com/axonivy-market/${{ github.event.repository.name }}" \
+            -DreleaseVersion=${{ env.RELEASE_VERSION }} \
+            -B
         else
           for module in ${{ env.MODULES }}; do
             echo "Running release for $module"
-            mvn --batch-mode -f "$module/pom.xml" -Darguments="-Dmaven.test.skip=true -DaltDeploymentRepository=github::https://maven.pkg.github.com/axonivy-market/${{ github.event.repository.name }}" release:prepare release:perform
+            mvn -f "$module/pom.xml" release:prepare release:perform \
+              -Darguments="-Dmaven.test.skip=true \
+              -DaltDeploymentRepository=github::https://maven.pkg.github.com/axonivy-market/${{ github.event.repository.name }}" \
+              -DreleaseVersion=${{ env.RELEASE_VERSION }} \
+              -B
           done
         fi
+
     - name: Create pull request
       if: ${{ inputs.raiseVersion }}
       uses: repo-sync/pull-request@v2
