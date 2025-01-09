@@ -78,7 +78,7 @@ jobs:
     - name: Find all POM files
       id: find-poms
       run: |
-        POM_FILES=$(find . -name "pom.xml")
+        POM_FILES=$(find . -name "pom.xml" | tr '\n' ' ')
         echo "POM_FILES=$POM_FILES" >> $GITHUB_ENV
 
     - name: Update POM versions
